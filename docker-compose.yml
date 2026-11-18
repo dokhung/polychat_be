@@ -4,18 +4,43 @@ services:
     container_name: polychat-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: polychat
-      POSTGRES_USER: polychat
-      POSTGRES_PASSWORD: polychat
+      POSTGRES_DB: ${POSTGRES_DB:-polychat}
+      POSTGRES_USER: ${POSTGRES_USER:-polychat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Create .env from .env.example first}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - polychat_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U polychat -d polychat"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  backend:
+    build: .
+    container_name: polychat-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-polychat}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-polychat}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Create .env from .env.example first}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env to at least 32 characters}
+      JWT_ACCESS_EXPIRATION_MS: ${JWT_ACCESS_EXPIRATION_MS:-900000}
+      JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-604800000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/v3/api-docs"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
 volumes:
   polychat_postgres_data:
